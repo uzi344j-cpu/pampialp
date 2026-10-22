@@ -2,7 +2,7 @@
    Strateji: "önce önbellek". Oyun tek dosya ve hiç değişmiyor, bu yüzden
    ağdan tazelemeye çalışmak gereksiz gecikme yaratıyor. Sürüm değişince
    eski önbellek siliniyor. */
-const CACHE='pampit-1790636164982';
+const CACHE='pampit-0.5.0-1792066465082';
 const FILES=['./','./index.html','./manifest.webmanifest',
              './icon-192.png','./icon-512.png','./icon-180.png'];
 
