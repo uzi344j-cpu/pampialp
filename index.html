@@ -9,6 +9,39 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%9B%BD%3C/text%3E%3C/svg%3E"/>
 <title>PAMPIT</title>
+<script>
+/* 0.5.3 · iOS ANA EKRAN (PWA) ALT BOŞLUĞU — oyuncu: "oyun alt kısma kadar
+   uzamıyor, o alanı da kullanmak lazım". Ana ekrandan açılan uygulamada
+   (navigator.standalone) ve "black-translucent" durum çubuğunda iOS,
+   sayfanın yüksekliğini (appH() / 100vh / 100dvh) durum çubuğu kadar
+   KISA hesaplıyor; sayfa yine en üstten başladığı için altta ~47 px'lik
+   koyu bir şerit kalıyordu. Çözüm: bu durumda gerçek ekran yüksekliği
+   (screen.height) kullanılır; <html> 'pwa-gap' sınıfı alır, body ekranı
+   tam kaplayan sabit bir kutu olur ve transform sayesinde bütün sabit
+   (position:fixed) arayüz parçaları body'ye göre yerleşir — alt dok, sayfa
+   altı panelleri ve menü gerçek ekranın altına oturur. Tarayıcıda ve
+   Capacitor uygulamasında hiçbir şey değişmez (orada fark yok).
+   Oyunun bütün piksel hesapları appH() yerine appH() kullanır. */
+(function(){
+  function fix(){
+    var de=document.documentElement, ih=window.innerHeight||0;
+    var sa=(window.navigator && window.navigator.standalone===true);
+    var port=!window.matchMedia || matchMedia('(orientation: portrait)').matches;
+    var sw=screen.width||0, sh=screen.height||0;
+    var full=port ? Math.max(sw,sh) : Math.min(sw,sh);
+    var gap=full-ih;
+    var h=(sa && gap>0 && gap<140) ? full : ih;   // yalnız makul bir boşluksa (durum çubuğu/ana çubuk boyu)
+    window.__appH=h;
+    de.style.setProperty('--app-h', h+'px');
+    de.classList.toggle('pwa-gap', h>ih);
+  }
+  window.appH=function(){ return window.__appH||window.innerHeight; };
+  window.__fixAppH=fix;
+  fix();
+  addEventListener('resize', fix);
+  addEventListener('orientationchange', function(){ setTimeout(fix, 300); });
+})();
+</script>
 <!-- YAZI TİPLERİ UYGULAMANIN İÇİNDE.
      Eskiden Google Fonts'tan çekiliyordu; internet yokken yazılar sistem
      fontuna düşüyor ve arayüz dağılıyordu. Artık .woff2 dosyaları pakette.
@@ -105,7 +138,10 @@ html,body{margin:0;height:100%;height:100dvh;
 /* Tuval güvenli alanın ALTINA kadar uzanıyor: çentik ve ana ekran
    çubuğu bölgesi de sahneyle dolu, boşluk kalmıyor. */
 canvas{display:block;position:fixed;top:0;left:0;
-  width:100%;height:100%;height:100dvh}
+  width:100%;height:100%;height:100dvh;height:var(--app-h,100dvh)}
+/* 0.5.3 · iOS PWA alt boşluğu (bkz. <head> betiği): gerçek ekran boyu */
+html.pwa-gap{height:var(--app-h)}
+html.pwa-gap body{position:fixed;top:0;left:0;width:100%;height:var(--app-h);transform:translateZ(0)}
 button{font-family:inherit;color:inherit;border:0;background:none;cursor:pointer;font-weight:800}
 .hidden{display:none!important}
 .disp{font-family:var(--disp);font-weight:400}
@@ -8323,17 +8359,34 @@ if('serviceWorker' in navigator){
     box(W, WH, 0.2, wm, 0, WH/2, -D/2, root);
     box(0.2, WH, D, wm, -W/2, WH/2, 0, root);
 
-    /* Tadilat yapılmadıysa: dökük sıva lekeleri ve çatlak */
+    /* Tadilat yapılmadıysa: dökük sıva lekeleri ve yerde moloz.
+       0.5.3 · oyuncu: "ev kısmında görüntüde buglar var". Oda 7×5'ten 9×7'ye
+       büyütülünce lekeler eski duvar koordinatlarında kalmıştı: arka duvar
+       lekeleri duvardan 1.1 m önde, yan duvar lekeleri 1.1 m içeride HAVADA
+       asılı duruyor, birinin içinden yatak geçiyordu. Artık duvar yüzeyine
+       yapışık. Moloz da her yeniden kurulumda rastgele yer değiştiriyor ve
+       eşyaların içinden çıkıyordu; şimdi sabit ve yalnız boş zeminde. */
     if (!restored) {
-      for (const [x,y,z,w,hh] of [[-1.6,1.9,-2.4,1.1,0.7],[1.4,1.2,-2.4,0.8,0.9],
-                                  [-3.4,2.1,0.8,0.05,0.8],[-3.4,1.0,-1.2,0.05,1.0]]) {
-        const isSide = Math.abs(x) > 3;
-        box(isSide?0.06:w, hh, isSide?0.9:0.06, mat(0x6E6152), x, y, z, root);
+      const backIn = -D/2 + 0.10 + 0.02, sideIn = -W/2 + 0.10 + 0.02;   // duvar iç yüzü + 2 cm
+      const stain = mat(0x54483C);                       // duvardan belirgin koyu leke
+      for (const [x, y, w, hh] of [[-1.0, 1.9, 1.1, 0.7], [3.4, 1.0, 0.8, 0.9]])      // arka duvar (pencereden uzak)
+        box(w, hh, 0.04, stain, x, y, backIn, root).userData.stain = 'back';
+      for (const [z, y, d, hh] of [[0.6, 2.1, 0.9, 0.8], [2.4, 1.0, 0.7, 1.0]])      // sol duvar
+        box(0.04, hh, d, stain, sideIn, y, z, root).userData.stain = 'side';
+      // moloz: odanın ortasındaki boş zemin; altında eşya varsa o parça çizilmiyor
+      const busy = [];                                   // [x0,x1,z0,z1] alınmış eşyaların yer kapladığı alan
+      if (done('bed'))  busy.push([-4.4, -2.9, -3.0, -0.8]);
+      if (done('sofa') || done('table2')) busy.push([0.5, 3.7, 0.2, 3.5]);
+      if (done('table')) busy.push([0.1, 1.7, -1.8, -0.1]);
+      if (done('shower') || done('washer')) busy.push([-4.4, -2.0, 1.6, 3.5]);
+      if (done('sink')) busy.push([-4.4, -3.5, 0.4, 1.4]);
+      const free = (x, z) => !busy.some(([a, b, c, d]) => x > a - 0.3 && x < b + 0.3 && z > c - 0.3 && z < d + 0.3);
+      for (const [x, z, w, d, r] of [[-1.6, 0.4, 0.42, 0.3, 0.3], [-0.7, 1.3, 0.36, 0.26, -0.5], [-2.3, -0.2, 0.32, 0.28, 0.9],
+                                     [-1.1, -0.9, 0.4, 0.24, 0.2], [0.2, 0.7, 0.3, 0.26, -0.2], [-1.9, 1.7, 0.34, 0.3, 0.6],
+                                     [1.2, -0.3, 0.36, 0.22, 1.1]]) {
+        if (!free(x, z)) continue;
+        const m = box(w, 0.08, d, stain, x, 0.05, z, root); m.rotation.y = r; m.userData.rubble = 1;
       }
-      // yerdeki moloz
-      for (let i=0;i<7;i++)
-        box(0.3+Math.random()*0.2, 0.08, 0.25, mat(0x6E6152),
-            -2.6+Math.random()*5, 0.05, -1.8+Math.random()*3.4, root);
     }
 
     /* --- PENCERE ---
@@ -8548,7 +8601,7 @@ if('serviceWorker' in navigator){
     const h0 = st();
     if (h0 && !h0.dragHint) {
       h0.dragHint = 1;
-      if (window.toast) setTimeout(() => toast('Sürükleyerek daireyi gezebilirsin', 'news'), 600);
+      if (window.toast) setTimeout(() => toast('Sürükle: gez · İki parmak: yakınlaştır', 'news'), 600);
     }
     bindDrag(true);
     if (window.PampitAudio) PampitAudio.sheetOpen();
@@ -8557,7 +8610,8 @@ if('serviceWorker' in navigator){
   H.close = function () {
     if (!open) return;
     open = false; picking = false;
-    CAM.tx = 0; CAM.tz = 0; CAM.drag = false;
+    CAM.tx = 0; CAM.tz = 0; CAM.zoom = ZOOM0; CAM.vx = CAM.vz = 0;
+    CAM.gx = CAM.gz = CAM.gzoom = null; CAM.drag = false;
     bindDrag(false);
     document.body.classList.remove('home-on');
     const el = document.getElementById('home-ui');
@@ -8592,93 +8646,168 @@ if('serviceWorker' in navigator){
      duvarlar basık görünüyordu.
 
      Aynı oranı küçük ölçekte kuruyoruz: (R, R·58/60, R). */
-  const ZOOM = 13;                   // görüş yüksekliği (birim)
-  const CAM_R = 11;                  // yatay uzaklık
-  const CAM_Y = CAM_R * 58 / 60;     // istasyonla aynı açı
+  /* ---------------- KAMERA (0.5.3: yeniden yazıldı) ----------------
+     Oyuncu: "ev kısmında gezmek, sürüklemek, büyütmek küçültmek baya zor".
+     Eski sistemin üç kusuru vardı:
+       1) Alt şerit (oda düğmeleri + eşya listesi) dokunma alanından
+          hariç DEĞİLDİ: listeyi kaydırmaya ya da düğmeye basmaya çalışan
+          parmak aynı anda odayı da sürüklüyordu.
+       2) Sürükleme parmağı izlemiyordu: oda parmaktan ~1.7 kat hızlı
+          kayıyordu (kaba bir katsayı), hedefi tutturmak zordu.
+       3) Yakınlaştırma hiç yoktu (ZOOM sabitti); iki parmak ilk parmağın
+          konumuna zıplatıyordu.
+     Yeni sistem (yalnız Pointer Events, tek parmak haritası):
+       · 1 parmak → kaydır. Ekran pikseli izometrik zemine TAM çevriliyor;
+         parmağın altındaki nokta parmakla birlikte gidiyor (1:1).
+       · 2 parmak → sıkıştır/aç ile yakınlaştır, iki parmağın ortası
+         sabit kalır (ortası da kaydırır).
+       · Tekerlek → yakınlaştır (masaüstü), çift dokunuş → başa dön.
+       · Bırakınca hafif savrulma, kenarlarda yumuşak sınır.
+       · Üst çubuk ve alt şerit dokunuşları kameraya HİÇ gitmiyor. */
+  const ZOOM0 = 13, ZMIN = 7.5, ZMAX = 17;      // görüş yüksekliği (birim): varsayılan / en yakın / en uzak
+  const CAM_R = 11;                             // yatay uzaklık
+  const CAM_Y = CAM_R * 58 / 60;                // istasyonla aynı açı (≈34°)
+  const LOOK_Y = 0.9;                           // kamera zeminin 0.9 m üstüne bakıyor (frameCamera)
+  const SIN_E = (CAM_Y - LOOK_Y) / Math.hypot(CAM_Y - LOOK_Y, CAM_R * Math.SQRT2);   // bakış yükselti açısının sinüsü
   const CAM = {
-    tx: 0, tz: 0,                    // bakış hedefi (oda uzayında)
+    tx: 0, tz: 0, zoom: ZOOM0,                  // şu anki hedef ve yakınlık
+    gx: null, gz: null, gzoom: null,            // yumuşak geçiş hedefi (oda düğmesi, çift dokunuş)
+    vx: 0, vz: 0,                               // savrulma hızı (birim/sn)
     drag: false, lx: 0, ly: 0,
   };
+  H._cam = CAM;                                 // test (tools/round21-live.js) için
+  H._camera = () => cam; H._root = () => root;   // test: izdüşüm ve sahne denetimi
 
   function frameCamera() {
     if (!cam) return;
-    const a = innerWidth / innerHeight;
-    cam.left = -ZOOM*a/2; cam.right = ZOOM*a/2;
-    cam.top = ZOOM/2; cam.bottom = -ZOOM/2;
+    const vh = (window.appH ? appH() : innerHeight);
+    const a = innerWidth / vh, Z = CAM.zoom;
+    cam.left = -Z*a/2; cam.right = Z*a/2;
+    cam.top = Z/2; cam.bottom = -Z/2;
     /* Kamera hedefin sabit uzaklığında ve sabit açıda duruyor. */
     cam.position.set(CAM.tx + CAM_R, CAM_Y, CAM.tz + CAM_R);
-    cam.lookAt(CAM.tx, 0.9, CAM.tz);
+    cam.lookAt(CAM.tx, LOOK_Y, CAM.tz);
     cam.updateProjectionMatrix();
   }
 
+  /* Ekrandaki (dx, dy) piksel kaymasını oda zeminindeki kaymaya çevir.
+     Kamera +X+Z köşesinden bakıyor: ekran-sağı = (1,0,−1)/√2, ekran-yukarısı
+     zeminde (−1,0,−1)/√2 yönünde ve 1/sin(yükselti) kadar uzun. */
+  function screenToFloor(dx, dy) {
+    const w = CAM.zoom / (window.appH ? appH() : innerHeight);   // piksel başına dünya birimi
+    const r = dx * w / Math.SQRT2, u = dy * w / (Math.SQRT2 * SIN_E);
+    return { x: -r - u, z: r - u };              // kamera hedefinin kayması (parmağın tersi)
+  }
+  /* sınırlar yakınlığa göre: uzaktan bakarken oda zaten sığıyor */
+  function bounds() {
+    const s = (ZMAX - CAM.zoom) / (ZMAX - ZMIN) * 0.6 + 0.6;
+    return { x0: -3.4 * s, x1: 3.4 * s, z0: -2.8 * s, z1: 3.4 * s };
+  }
+  function clampCam() {
+    const b = bounds();
+    CAM.tx = clampv(CAM.tx, b.x0, b.x1);
+    CAM.tz = clampv(CAM.tz, b.z0, b.z1);
+  }
+  function setZoom(z) { CAM.zoom = clampv(z, ZMIN, ZMAX); }
 
-  /* ---------------- SÜRÜKLEME ----------------
-     Olay hedefine göre karar vermiyoruz. Oyunun kendi tuvali
-     `setPointerCapture` kullanıyor ve arayüz katmanları tam ekran
-     olduğu için `e.target` güvenilmez çıkıyordu — sürükleme sessizce
-     yutuluyordu.
-
-     Onun yerine KOORDİNATA bakıyoruz: dokunuş üst şeridin veya açık
-     listenin dikdörtgeni içindeyse karışmıyoruz, değilse kamera. */
+  /* Dokunuş arayüzün üstünde mi? (üst çubuk, alt şerit, açık liste)
+     Olay hedefine değil KOORDİNATA bakıyoruz: oyunun tuvali pointer
+     capture kullanıyor, e.target güvenilmez. */
   function inPanel(x, y) {
-    for (const sel of ['.home-bar', '#home-ui.open .home-sheet']) {
-      const el = document.querySelector(sel);
-      if (!el) continue;
-      const r = el.getBoundingClientRect();
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+    for (const sel of ['.home-bar', '.home-dock', '#home-ui.open .home-sheet', '#home-ui .home-pick']) {
+      for (const el of document.querySelectorAll(sel)) {
+        const r = el.getBoundingClientRect();
+        if (r.width && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true;
+      }
     }
     return false;
   }
 
-  function ptOf(e) {
-    if (e.touches && e.touches.length) return e.touches[0];
-    return e;
-  }
+  const ptrs = new Map();             // aktif parmaklar: id → {x,y}
+  let pinch = null, lastTap = 0, lastMoveT = 0;
 
   function onDown(e) {
     if (!open) return;
-    const p = ptOf(e);
-    if (inPanel(p.clientX, p.clientY)) return;
-    CAM.drag = true; CAM.lx = p.clientX; CAM.ly = p.clientY;
+    if (inPanel(e.clientX, e.clientY)) return;
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    CAM.vx = CAM.vz = 0; CAM.gx = CAM.gz = CAM.gzoom = null;   // parmak değince savrulma ve geçiş durur
+    if (ptrs.size === 1) {
+      CAM.drag = true; CAM.lx = e.clientX; CAM.ly = e.clientY; lastMoveT = performance.now();
+      // çift dokunuş → başa dön (varsayılan yakınlık, oda ortası)
+      const now = performance.now();
+      if (now - lastTap < 300) { CAM.gx = 0; CAM.gz = 0; CAM.gzoom = ZOOM0; CAM.drag = false; }
+      lastTap = now;
+    } else if (ptrs.size === 2) {
+      const [a, b] = [...ptrs.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z: CAM.zoom, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+      CAM.drag = false;
+    }
   }
   function onMove(e) {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size >= 2 && pinch) {
+      const [a, b] = [...ptrs.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if (pinch.d > 10 && d > 10) setZoom(pinch.z * pinch.d / d);
+      const m = screenToFloor(mx - pinch.mx, my - pinch.my);   // iki parmağın ortası da kaydırır
+      CAM.tx += m.x; CAM.tz += m.z; pinch.mx = mx; pinch.my = my;
+      clampCam();
+      return;
+    }
     if (!CAM.drag) return;
-    const p = ptOf(e);
-    const dx = p.clientX - CAM.lx, dy = p.clientY - CAM.ly;
-    CAM.lx = p.clientX; CAM.ly = p.clientY;
-    /* İSTASYONDAKİ FORMÜLÜN AYNISI: ekran ekseninde sürükleme,
-       izometrik düzleme çevriliyor. Böylece parmak nereye giderse
-       oda o yöne kayıyor. */
-    const k = ZOOM / innerHeight * 1.7;
-    CAM.tx -= (dx + dy) * k * 0.7;
-    CAM.tz -= (dy - dx) * k * 0.7;
-    /* Oda 9×7 + ön kenarda balkon. Sınırlar dışarı kaçmayı engelliyor. */
-    CAM.tx = clampv(CAM.tx, -3.2, 3.2);
-    CAM.tz = clampv(CAM.tz, -2.6, 3.4);
+    const dx = e.clientX - CAM.lx, dy = e.clientY - CAM.ly;
+    CAM.lx = e.clientX; CAM.ly = e.clientY;
+    const m = screenToFloor(dx, dy);
+    CAM.tx += m.x; CAM.tz += m.z; clampCam();
+    // savrulma için hız (son hareketlerin yumuşatılmış ortalaması)
+    const now = performance.now(), dt = Math.max(8, now - lastMoveT) / 1000; lastMoveT = now;
+    CAM.vx = CAM.vx * 0.6 + (m.x / dt) * 0.4; CAM.vz = CAM.vz * 0.6 + (m.z / dt) * 0.4;
   }
+  function onUp(e) {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (ptrs.size === 1) {            // ikiden bire düştü: kalan parmaktan zıplamadan devam
+      const [p] = [...ptrs.values()];
+      CAM.drag = true; CAM.lx = p.x; CAM.ly = p.y; pinch = null; CAM.vx = CAM.vz = 0;
+    } else if (ptrs.size === 0) {
+      CAM.drag = false; pinch = null;
+      if (performance.now() - lastMoveT > 90) CAM.vx = CAM.vz = 0;   // durup bırakınca savrulma yok
+    }
+  }
+  function onWheel(e) {
+    if (!open || inPanel(e.clientX, e.clientY)) return;
+    setZoom(CAM.zoom * (1 + Math.sign(e.deltaY) * 0.1)); clampCam();
+  }
+  /* Sayfanın kendi yakınlaştırmasını (iki parmak) engelle */
+  function onTouchMove(e) { if (open && e.touches && e.touches.length > 1) e.preventDefault(); }
 
-  function onUp() { CAM.drag = false; }
-
-  /* Hem pointer hem touch olaylarını, hem window hem tuval üzerinde
-     dinliyoruz. Biri yutulursa diğeri yakalıyor. */
   function bindDrag(on) {
-    const cv = document.querySelector('canvas');
-    const targets = [window, cv].filter(Boolean);
-    const pairs = [['pointerdown', onDown], ['pointermove', onMove],
-                   ['pointerup', onUp], ['pointercancel', onUp],
-                   ['touchstart', onDown], ['touchmove', onMove],
-                   ['touchend', onUp]];
-    for (const t of targets)
-      for (const [ev, fn] of pairs)
-        on ? t.addEventListener(ev, fn, { capture: true, passive: true })
-           : t.removeEventListener(ev, fn, { capture: true });
+    const opt = { capture: true, passive: true };
+    const pairs = [['pointerdown', onDown], ['pointermove', onMove], ['pointerup', onUp],
+                   ['pointercancel', onUp], ['wheel', onWheel]];
+    for (const [ev, fn] of pairs) on ? window.addEventListener(ev, fn, opt) : window.removeEventListener(ev, fn, opt);
+    on ? window.addEventListener('touchmove', onTouchMove, { capture: true, passive: false })
+       : window.removeEventListener('touchmove', onTouchMove, { capture: true });
+    if (!on) { ptrs.clear(); pinch = null; CAM.drag = false; }
   }
   const clampv = (v, a, b) => v < a ? a : (v > b ? b : v);
 
-  /* Bırakınca SAVRULMA: dönüş bir süre devam edip yavaşça duruyor.
-     Merkeze geri yaylanmıyor — oyuncu bıraktığı açıda kalıyor. */
-  /* Kaydırmada atalet yok — istasyonda da yok, tutarlı olsun. */
-  function easeCamera() {}
+  /* Her kare: savrulma (sürtünmeyle sönüyor) ve yumuşak geçişler. */
+  let lastT = 0;
+  function easeCamera() {
+    const now = performance.now(), dt = Math.min(0.05, lastT ? (now - lastT) / 1000 : 0.016); lastT = now;
+    if (!CAM.drag && !pinch && (Math.abs(CAM.vx) + Math.abs(CAM.vz) > 0.05)) {
+      CAM.tx += CAM.vx * dt; CAM.tz += CAM.vz * dt;
+      const f = Math.pow(0.04, dt); CAM.vx *= f; CAM.vz *= f;      // ~1 sn'de söner
+      clampCam();
+    } else if (!CAM.drag && !pinch) { CAM.vx = CAM.vz = 0; }
+    const k = 1 - Math.pow(0.002, dt);                               // kare hızından bağımsız yaklaşma
+    if (CAM.gx != null) { CAM.tx += (CAM.gx - CAM.tx) * k; CAM.tz += (CAM.gz - CAM.tz) * k;
+      if (Math.abs(CAM.gx - CAM.tx) + Math.abs(CAM.gz - CAM.tz) < 0.01) { CAM.tx = CAM.gx; CAM.tz = CAM.gz; CAM.gx = CAM.gz = null; } }
+    if (CAM.gzoom != null) { CAM.zoom += (CAM.gzoom - CAM.zoom) * k;
+      if (Math.abs(CAM.gzoom - CAM.zoom) < 0.01) { CAM.zoom = CAM.gzoom; CAM.gzoom = null; } }
+  }
 
 
   H.render = function (renderer) {
@@ -8828,7 +8957,7 @@ if('serviceWorker' in navigator){
       sel = null;
       /* Kamera o odaya kayıyor: düğme ile 3B görünüm örtüşüyor. */
       const r = H.ROOMS.find(x => x.id === room);
-      if (r) { CAM.tx = r.at[0] * 0.55; CAM.tz = r.at[1] * 0.55; }
+      if (r) { CAM.gx = r.at[0] * 0.55; CAM.gz = r.at[1] * 0.55; CAM.vx = CAM.vz = 0; }   // yumuşak geçiş
       if (window.PampitAudio) PampitAudio.tap();
       H.refresh();
       return;
@@ -9327,7 +9456,7 @@ window.PAMPIT_CREW_ART = {"city_city":"data:image/webp;base64,UklGRj4jAABXRUJQVl
    Eksik anahtar Türkçe görünür — oyun hiçbir durumda boş kalmaz.
    register         → birebir metinler
    registerPatterns → {n} yer tutuculu kalıplar (para, sayı, ad olduğu gibi taşınır)
-   Toplam: 4589 metin + 218 kalıp. */
+   Toplam: 4595 metin + 218 kalıp. */
 PampitI18n.register("en", {
  " · günlük ödül": " · daily reward",
  "— daha azıyla": "— running it with less",
@@ -9370,13 +9499,16 @@ PampitI18n.register("en", {
  "(fısıltıyla) Toplantıdayım, konuşamıyorum. Full yap, kartla ödeyeceğim.": "(whispering) I'm in a meeting, can't talk. Fill it up, I'll pay by card.",
  "(kapı vurulunca) ...Beş dakika daha usta, çok yorgunum.": "(at the knock) ...Five more minutes, boss, I'm so tired.",
  "(kızarıyor) Abi... ben ödeyecektim, gerçekten. Kameraya bakıp panikledim.": "(blushing) Bro... I was going to pay, honestly. I saw the camera and panicked.",
+ "(orientation: portrait)": "(orientation: portrait)",
  "(Sadece parmağıyla benzini işaret etti.)": "(He just pointed at the petrol.)",
  "(sessizce elini uzatıyor) ...": "(silently holds out his hand) ...",
  "(Şoför konuşmuyor. Kartla ödüyor. Fişi almıyor.)": "(The driver doesn't talk. Pays by card. Doesn't take the receipt.)",
  "(Telefonda) Bir dakika... Ne demiştim, benzin mi dizel mi?": "(On the phone) Hang on... What did I say, petrol or diesel?",
  "(telefonla çeviri) Kart çalışmıyor... nakit yok... yakıt aldık, market borcu kaldı.": "(phone translation) Card not working... no cash... we got fuel, the shop bill is left.",
  "(telefonla) Bir saniye... Evet abi doldur, ben konuşuyorum.": "(on the phone) One sec... Yeah bro, fill it, I'm talking.",
+ "(TEST MODU)": "(TEST MODE)",
  "(yıldızlar) ve": "(stars) and",
+ "#home-ui .home-pick": "#home-ui .home-pick",
  "#home-ui.open .home-sheet": "#home-ui.open .home-sheet",
  "#hud .pod.gauges": "#hud .pod.gauges",
  "#hud .pod.left": "#hud .pod.left",
@@ -12684,6 +12816,7 @@ PampitI18n.register("en", {
  "Reklam kişiselleştirme tercihini değiştir. AB düzenlemesi gereği bu seçenek her zaman erişilebilir olmalı.": "Change your ad personalisation preference. Under EU regulations this option must always be accessible.",
  "Reklam panosu değil burası": "This isn't a billboard",
  "Reklam parası ödemem": "I don't pay for ads",
+ "Reklam yarıda kapandı, ödül verilmedi.": "The ad was closed early, no reward given.",
  "Reklam yüklenemedi, ödül verilmedi.": "Ad failed to load, no reward given.",
  "Reklama gerek yok": "No need for ads",
  "Reklamı izlersen dağıtıcı sözleşmeyi son bir uyarıyla askıya alır; itibarın 1.5 yıldıza döner.": "Watch an ad and the distributor suspends the contract with a final warning; your rating returns to 1.5 stars.",
@@ -13087,6 +13220,7 @@ PampitI18n.register("en", {
  "Sürücü şarj fişini uzatıp itiraz ediyor.": "The driver is holding out the charging plug and complaining.",
  "Sürücü telefonla konuşuyor.": "The driver's on the phone.",
  "Sürücülerin sis lambası kullanması ve takip mesafesini artırması öneriliyor.": "Drivers are advised to use fog lights and increase following distance.",
+ "Sürükle: gez · İki parmak: yakınlaştır": "Drag to look around · Pinch to zoom",
  "Sürükleyerek daireyi gezebilirsin": "Drag to look around the flat",
  "Şaka ama üzüm gerçekten geldi.": "A joke, but the grapes really came.",
  "Şaka hoşuna gitti.": "He liked the joke.",
@@ -13316,6 +13450,7 @@ PampitI18n.register("en", {
  "Tavşan kanı! 🤌": "Rabbit's blood! 🤌",
  "Tedarik güvenliği, bayi için sipariş özgürlüğü demektir: kota kalkar, tanker daha çabuk gelir, kuru tank riski düşer. Fiyat üzerindeki etkisi ise aşağı yönlüdür.": "Supply security means ordering freedom for a dealer: quotas lift, tankers arrive sooner, dry-tank risk falls. And the effect on price is downward.",
  "Tedarikçimi değiştirmem": "I'm not changing my supplier",
+ "Teen": "Teen",
  "Tehlikeli": "Dangerous",
  "TEHLİKELİ": "DANGER ZONE",
  "Tehlikeli bir savsaklama.": "A dangerous bit of neglect.",
@@ -14148,7 +14283,7 @@ PampitI18n.registerPatterns("en", {
    Eksik anahtar Türkçe görünür — oyun hiçbir durumda boş kalmaz.
    register         → birebir metinler
    registerPatterns → {n} yer tutuculu kalıplar (para, sayı, ad olduğu gibi taşınır)
-   Toplam: 4589 metin + 218 kalıp. */
+   Toplam: 4595 metin + 218 kalıp. */
 PampitI18n.register("es", {
  " · günlük ödül": " · recompensa diaria",
  "— daha azıyla": "— operar con menos",
@@ -14191,13 +14326,16 @@ PampitI18n.register("es", {
  "(fısıltıyla) Toplantıdayım, konuşamıyorum. Full yap, kartla ödeyeceğim.": "(susurrando) Estoy en una reunión, no puedo hablar. Lleno, pago con tarjeta.",
  "(kapı vurulunca) ...Beş dakika daha usta, çok yorgunum.": "(al llamar) ...Cinco minutos más, jefe, estoy muy cansado.",
  "(kızarıyor) Abi... ben ödeyecektim, gerçekten. Kameraya bakıp panikledim.": "(sonrojado) Oye... iba a pagar, de verdad. Vi la cámara y me entró el pánico.",
+ "(orientation: portrait)": "(orientation: portrait)",
  "(Sadece parmağıyla benzini işaret etti.)": "(Solo señaló la gasolina con el dedo.)",
  "(sessizce elini uzatıyor) ...": "(extiende la mano en silencio) ...",
  "(Şoför konuşmuyor. Kartla ödüyor. Fişi almıyor.)": "(El conductor no habla. Paga con tarjeta. No coge el recibo.)",
  "(Telefonda) Bir dakika... Ne demiştim, benzin mi dizel mi?": "(Al teléfono) Un momento... ¿Qué dije, gasolina o diésel?",
  "(telefonla çeviri) Kart çalışmıyor... nakit yok... yakıt aldık, market borcu kaldı.": "(traductor del móvil) La tarjeta no va... no hay efectivo... pusimos combustible, falta pagar la tienda.",
  "(telefonla) Bir saniye... Evet abi doldur, ben konuşuyorum.": "(al teléfono) Un segundo... Sí, llénalo, que estoy hablando.",
+ "(TEST MODU)": "(MODO DE PRUEBA)",
  "(yıldızlar) ve": "(estrellas) y",
+ "#home-ui .home-pick": "#home-ui .home-pick",
  "#home-ui.open .home-sheet": "#home-ui.open .home-sheet",
  "#hud .pod.gauges": "#hud .pod.gauges",
  "#hud .pod.left": "#hud .pod.left",
@@ -17505,6 +17643,7 @@ PampitI18n.register("es", {
  "Reklam kişiselleştirme tercihini değiştir. AB düzenlemesi gereği bu seçenek her zaman erişilebilir olmalı.": "Cambia tu preferencia de personalización de anuncios. Según la normativa de la UE, esta opción debe estar siempre accesible.",
  "Reklam panosu değil burası": "Esto no es un tablón de anuncios",
  "Reklam parası ödemem": "No pago publicidad",
+ "Reklam yarıda kapandı, ödül verilmedi.": "El anuncio se cerró antes de tiempo, sin recompensa.",
  "Reklam yüklenemedi, ödül verilmedi.": "No se pudo cargar el anuncio; no hay recompensa.",
  "Reklama gerek yok": "No hace falta publicidad",
  "Reklamı izlersen dağıtıcı sözleşmeyi son bir uyarıyla askıya alır; itibarın 1.5 yıldıza döner.": "Si ves el anuncio, la distribuidora suspende el contrato con un último aviso; tu reputación vuelve a 1.5 estrellas.",
@@ -17908,6 +18047,7 @@ PampitI18n.register("es", {
  "Sürücü şarj fişini uzatıp itiraz ediyor.": "El conductor sostiene el cable de carga y protesta.",
  "Sürücü telefonla konuşuyor.": "El conductor habla por teléfono.",
  "Sürücülerin sis lambası kullanması ve takip mesafesini artırması öneriliyor.": "Se recomienda usar las luces antiniebla y aumentar la distancia de seguridad.",
+ "Sürükle: gez · İki parmak: yakınlaştır": "Arrastra para moverte · Pellizca para hacer zoom",
  "Sürükleyerek daireyi gezebilirsin": "Arrastra para recorrer el piso",
  "Şaka ama üzüm gerçekten geldi.": "Era broma, pero las uvas llegaron.",
  "Şaka hoşuna gitti.": "Le gustó la broma.",
@@ -18137,6 +18277,7 @@ PampitI18n.register("es", {
  "Tavşan kanı! 🤌": "¡Sangre de conejo! 🤌",
  "Tedarik güvenliği, bayi için sipariş özgürlüğü demektir: kota kalkar, tanker daha çabuk gelir, kuru tank riski düşer. Fiyat üzerindeki etkisi ise aşağı yönlüdür.": "La seguridad de suministro es libertad de pedido para el concesionario: se acaban los cupos, el camión cisterna llega antes y baja el riesgo de tanque seco. Y el efecto en el precio es a la baja.",
  "Tedarikçimi değiştirmem": "No cambio de proveedor",
+ "Teen": "Teen",
  "Tehlikeli": "Peligroso",
  "TEHLİKELİ": "ZONA DE PELIGRO",
  "Tehlikeli bir savsaklama.": "Un descuido peligroso.",
@@ -18969,7 +19110,7 @@ PampitI18n.registerPatterns("es", {
    Eksik anahtar Türkçe görünür — oyun hiçbir durumda boş kalmaz.
    register         → birebir metinler
    registerPatterns → {n} yer tutuculu kalıplar (para, sayı, ad olduğu gibi taşınır)
-   Toplam: 4589 metin + 218 kalıp. */
+   Toplam: 4595 metin + 218 kalıp. */
 PampitI18n.register("ar", {
  " · günlük ödül": " · المكافأة اليومية",
  "— daha azıyla": "— تشغيله بأقل من ذلك",
@@ -19012,13 +19153,16 @@ PampitI18n.register("ar", {
  "(fısıltıyla) Toplantıdayım, konuşamıyorum. Full yap, kartla ödeyeceğim.": "(هامسًا) أنا في اجتماع، لا أستطيع الكلام. املأ الخزان، سأدفع بالبطاقة.",
  "(kapı vurulunca) ...Beş dakika daha usta, çok yorgunum.": "(عند طرق الباب) ...خمس دقائق أخرى يا معلّم، أنا متعب جدًا.",
  "(kızarıyor) Abi... ben ödeyecektim, gerçekten. Kameraya bakıp panikledim.": "(يحمرّ وجهه) يا أخي... كنت سأدفع، حقًا. رأيت الكاميرا فارتبكت.",
+ "(orientation: portrait)": "(orientation: portrait)",
  "(Sadece parmağıyla benzini işaret etti.)": "(أشار بإصبعه إلى البنزين فقط.)",
  "(sessizce elini uzatıyor) ...": "(يمد يده بصمت) ...",
  "(Şoför konuşmuyor. Kartla ödüyor. Fişi almıyor.)": "(السائق لا يتكلم. يدفع بالبطاقة. لا يأخذ الإيصال.)",
  "(Telefonda) Bir dakika... Ne demiştim, benzin mi dizel mi?": "(على الهاتف) لحظة... ماذا قلت، بنزين أم ديزل؟",
  "(telefonla çeviri) Kart çalışmıyor... nakit yok... yakıt aldık, market borcu kaldı.": "(ترجمة الهاتف) البطاقة لا تعمل... لا نقد... أخذنا وقودًا، وبقي دين المتجر.",
  "(telefonla) Bir saniye... Evet abi doldur, ben konuşuyorum.": "(على الهاتف) لحظة... نعم يا أخي املأها، أنا أتكلم.",
+ "(TEST MODU)": "(وضع الاختبار)",
  "(yıldızlar) ve": "(النجوم) و",
+ "#home-ui .home-pick": "#home-ui .home-pick",
  "#home-ui.open .home-sheet": "#home-ui.open .home-sheet",
  "#hud .pod.gauges": "#hud .pod.gauges",
  "#hud .pod.left": "#hud .pod.left",
@@ -22326,6 +22470,7 @@ PampitI18n.register("ar", {
  "Reklam kişiselleştirme tercihini değiştir. AB düzenlemesi gereği bu seçenek her zaman erişilebilir olmalı.": "غيّر تفضيل تخصيص الإعلانات. وفقًا للوائح الاتحاد الأوروبي يجب أن يكون هذا الخيار متاحًا دائمًا.",
  "Reklam panosu değil burası": "هذا ليس لوحة إعلانات",
  "Reklam parası ödemem": "لا أدفع مقابل الإعلانات",
+ "Reklam yarıda kapandı, ödül verilmedi.": "أُغلق الإعلان قبل نهايته، لم تُمنح المكافأة.",
  "Reklam yüklenemedi, ödül verilmedi.": "تعذّر تحميل الإعلان، ولم تُمنح المكافأة.",
  "Reklama gerek yok": "لا حاجة للإعلانات",
  "Reklamı izlersen dağıtıcı sözleşmeyi son bir uyarıyla askıya alır; itibarın 1.5 yıldıza döner.": "شاهد الإعلان وسيعلّق الموزّع العقد بإنذار أخير؛ ويعود تقييمك إلى 1.5 نجمة.",
@@ -22729,6 +22874,7 @@ PampitI18n.register("ar", {
  "Sürücü şarj fişini uzatıp itiraz ediyor.": "السائق يمدّ قابس الشحن ويعترض.",
  "Sürücü telefonla konuşuyor.": "السائق يتحدث على الهاتف.",
  "Sürücülerin sis lambası kullanması ve takip mesafesini artırması öneriliyor.": "يُنصح السائقون باستخدام مصابيح الضباب وزيادة مسافة الأمان.",
+ "Sürükle: gez · İki parmak: yakınlaştır": "اسحب للتجول · قرّب بإصبعين",
  "Sürükleyerek daireyi gezebilirsin": "اسحب لتتجول في الشقة",
  "Şaka ama üzüm gerçekten geldi.": "كانت مزحة، لكن العنب وصل فعلًا.",
  "Şaka hoşuna gitti.": "أعجبته المزحة.",
@@ -22958,6 +23104,7 @@ PampitI18n.register("ar", {
  "Tavşan kanı! 🤌": "دم الأرنب! 🤌",
  "Tedarik güvenliği, bayi için sipariş özgürlüğü demektir: kota kalkar, tanker daha çabuk gelir, kuru tank riski düşer. Fiyat üzerindeki etkisi ise aşağı yönlüdür.": "أمن الإمداد يعني للوكيل حرية الطلب: تُرفع الحصص، ويصل الصهريج أسرع، ويقل خطر جفاف الخزان. أما أثره على السعر فهو نحو الانخفاض.",
  "Tedarikçimi değiştirmem": "لن أغيّر مورّدي",
+ "Teen": "Teen",
  "Tehlikeli": "خطير",
  "TEHLİKELİ": "منطقة خطرة",
  "Tehlikeli bir savsaklama.": "إهمال خطير.",
@@ -23797,8 +23944,9 @@ PampitI18n.registerPatterns("ar", {
 
    İÇİNDEKİLER:
      1. Ortam tespiti      — native miyiz, hangi platform
-     2. ONAY ZİNCİRİ       — UMP (GDPR) → ATT (IDFA) → SDK başlatma
-     3. Ödüllü reklam      — yükle / göster / ödülü doğrula
+     2. REKLAM AYARLARI    — test/gerçek kimlikler (yayın öncesi tek yer)
+        ONAY ZİNCİRİ       — UMP (GDPR) → ATT (IDFA) → SDK başlatma
+     3. Ödüllü reklam      — önceden yükle / göster / ödülü doğrula
      4. Native özellikler  — titreşim, ekran uyanık, durum çubuğu, kayıt
      5. Ağ durumu          — reklam düğmeleri çevrimdışıyken sönük
 
@@ -23832,173 +23980,228 @@ PampitI18n.registerPatterns("ar", {
   const log = (...a) => console.log('[PampitNative]', ...a);
 
   // ==========================================================================
-  //  2. ONAY ZİNCİRİ
+  //  2. REKLAM AYARLARI — YAYIN ÖNCESİ DEĞİŞECEK TEK YER
   // ==========================================================================
+  /* 0.5.1 · Eklenti: @capacitor-community/admob 7.x (ücretsiz). Aşağıdaki
+     adaptör bu eklentinin GERÇEK imzalarıyla yazıldı (paketin
+     definitions.d.ts ve iOS kaynak kodundan doğrulandı):
+       requestConsentInfo / showConsentForm / showPrivacyOptionsForm
+       trackingAuthorizationStatus / requestTrackingAuthorization
+       initialize / prepareRewardVideoAd / showRewardVideoAd
+       olaylar: onRewardedVideoAdReward · onRewardedVideoAdDismissed ·
+                onRewardedVideoAdFailedToShow
+     0.5.0'daki adaptör eklentide OLMAYAN metotları çağırıyordu
+     (requestConsent, loadRewardedAd, 'rewardEarned'): telefonda ilk satırda
+     hata, reklam sistemi hiç açılmıyor, düğmeler hiç görünmüyordu.
 
-  /* --- REKLAM EKLENTİSİ ADAPTÖRÜ ---------------------------------------
-     İki seçenek var; hangisini kurduysan AŞAĞIDAKİ tek nesneyi ona göre
-     ayarla. Oyunun geri kalanı bu arayüzü kullanıyor, başka hiçbir yeri
-     değiştirmen gerekmiyor.
+     YAYINA ÇIKARKEN:
+       1) testMode → false   (TestFlight dahil test boyunca true kalır)
+       2) ios.appId / ios.rewarded → GERÇEK kimlikler ✔ (0.5.2'de girildi)
+          (appId ayrıca ios/App/App/Info.plist → GADApplicationIdentifier)
+       3) testDevices → kendi telefonunun kimliği (Xcode konsolunda
+          "<Google> To get test ads on this device, set: ... testDeviceIdentifiers = @[ @"XXXX" ]"
+          satırında yazar). Böylece gerçek kimlikle bile SANA test reklamı
+          gelir; kendi reklamına tıklamak AdMob hesabını kapattırır.
+     `node tools/release-check.js` test kimliği kalırsa uyarır. */
+  const AD_CONFIG = {
+    testMode: true,                    // true: Google'ın test reklamları
+    debugEEA: false,                   // true: AB kullanıcısı taklidi (GDPR formu test)
+    testDevices: [],                   // ['XXXXXXXX-XXXX-...'] — kendi cihazların
+    maxAdContentRating: 'Teen',        // General | ParentalGuidance | Teen | MatureAudience
+    ios: {
+      /* 0.5.2 · Kalin Studios'un GERÇEK AdMob kimlikleri (24 Ekim 2026).
+         testMode true iken eklenti bu birim yerine Google'ın test birimini
+         yükler (isTesting) — yani testte gerçek reklam gelmez, hesap güvende.
+         Uygulama kimliği ise testte de GERÇEK olmalı (Google'ın kuralı). */
+      appId:    'ca-app-pub-3347982082443786~7317105357',   // Info.plist → GADApplicationIdentifier ile AYNI
+      rewarded: 'ca-app-pub-3347982082443786/3915162373',  // ödüllü reklam birimi "pampit_rewarded"
+    },
+    android: {                         // Android sürümü henüz yok: Google'ın test kimlikleri
+      appId:    'ca-app-pub-3940256099942544~3347511713',   // TEST
+      rewarded: 'ca-app-pub-3940256099942544/5224354917',   // TEST
+    },
+  };
+  Pampit.adConfig = AD_CONFIG;         // denetim ve hata ayıklama için okunabilir
 
-     A) @capawesome-team/capacitor-admob   (ÜCRETLİ — Insiders lisansı)
-        Aşağıdaki eşleme DOĞRUDUR, resmi dokümandan alındı.
-
-     B) @capacitor-community/admob         (ÜCRETSİZ)
-        Metot adları farklı. Kurduktan sonra `npx cap sync` yapıp
-        node_modules/@capacitor-community/admob/dist/esm/definitions.d.ts
-        dosyasından imzaları teyit et ve buradaki dört satırı düzelt.
-        (Bu eklentinin API'sini doğrulayamadım — körlemesine yazmıyorum.)
-  -------------------------------------------------------------------------*/
+  /* --- ADAPTÖR ------------------------------------------------------------
+     Capacitor iOS her native eklentiyi window.Capacitor.Plugins[ad] altına
+     enjekte ediyor (JSExport.swift), bu yüzden paketleyici/import olmadan
+     doğrudan erişiyoruz. */
+  const ADMOB = P.AdMob || null;
   const AdPlugin = {
-    impl: P.Admob || P.AdMob || null,
-
-    async requestConsent(opts) { return this.impl.requestConsent(opts || {}); },
-    async initialize(opts)     { return this.impl.initialize(opts || {}); },
-    async loadRewarded(o)      { return this.impl.loadRewardedAd(o); },
-    async showRewarded(o)      { return this.impl.showRewardedAd(o); },
-    async showPrivacyForm()    { return this.impl.showPrivacyOptionsForm(); },
-    addListener(ev, fn)        { return this.impl.addListener(ev, fn); },
+    impl: ADMOB,
+    consentInfo(opts)       { return ADMOB.requestConsentInfo(opts || {}); },
+    consentForm()           { return ADMOB.showConsentForm(); },
+    privacyForm()           { return ADMOB.showPrivacyOptionsForm(); },
+    attStatus()             { return ADMOB.trackingAuthorizationStatus(); },
+    attRequest()            { return ADMOB.requestTrackingAuthorization(); },
+    initialize(opts)        { return ADMOB.initialize(opts || {}); },
+    prepareRewarded(opts)   { return ADMOB.prepareRewardVideoAd(opts); },
+    showRewarded()          { return ADMOB.showRewardVideoAd(); },
+    on(ev, fn)              { return ADMOB.addListener(ev, fn); },
+  };
+  const EV = {
+    rewarded:     'onRewardedVideoAdReward',
+    dismissed:    'onRewardedVideoAdDismissed',
+    failedToShow: 'onRewardedVideoAdFailedToShow',
   };
 
+  // ==========================================================================
+  //  2b. ONAY ZİNCİRİ
+  // ==========================================================================
   /**
-   * Onay zinciri. Uygulama HER AÇILIŞTA bunu çağırır.
-   *
-   *   1) UMP: AB/İngiltere/düzenlemeli ABD eyaletlerinde onay formu çıkar.
-   *      Bölge dışındaysa form çıkmaz, `canRequestAds` doğrudan true döner.
-   *   2) ATT: yalnız iOS'ta ve YALNIZ UMP onay verdiyse sorulur.
-   *      GDPR reddedildiyse ATT'yi SORMUYORUZ — Google'ın açık talimatı bu.
-   *   3) SDK: en son başlatılır.
+   * Uygulama HER AÇILIŞTA çağırır. Google'ın önerdiği sıra:
+   *   1) UMP: onay bilgisini güncelle; form gerekiyorsa göster
+   *      (AB/İngiltere/düzenlemeli ABD eyaletleri; diğer bölgelerde form yok).
+   *      AdMob panelinde "IDFA açıklama mesajı" açıksa UMP, ATT'den önce
+   *      kendi açıklama ekranını da gösterir.
+   *   2) ATT: yalnız iOS, yalnız reklam isteğine izin varsa ve henüz
+   *      sorulmadıysa (kurulum başına bir kez).
+   *   3) SDK'yı başlat.
+   * Hiçbir adım oyunu bloklamaz; hata = reklamsız devam.
    */
   async function setupConsentAndAds() {
-    if (!NATIVE || !AdPlugin.impl) {
+    if (!NATIVE || !ADMOB) {
       log('reklam eklentisi yok — reklamsız modda çalışılıyor');
       return false;
     }
-
     try {
-      // --- 1) UMP ---------------------------------------------------------
-      const res = await AdPlugin.requestConsent({
-        // Test için: DebugGeography.Eea ile AB kullanıcısı taklit edilir.
-        // ...(DEV ? { debugGeography: 'EEA', testDeviceIds: ['CİHAZ_ID'] } : {})
-      });
-
+      // --- 1) UMP -----------------------------------------------------------
+      const req = {};
+      if (AD_CONFIG.debugEEA) req.debugGeography = 1;              // AdmobConsentDebugGeography.EEA
+      if (AD_CONFIG.testDevices.length) req.testDeviceIdentifiers = AD_CONFIG.testDevices.slice();
+      let info = await AdPlugin.consentInfo(req);
+      if (!info.canRequestAds && info.isConsentFormAvailable && info.status === 'REQUIRED') {
+        info = await AdPlugin.consentForm();
+      }
       Pampit.consent = {
-        status: res.status,
-        canRequestAds: !!res.canRequestAds,
-        privacyOptionsRequired: !!res.privacyOptionsRequired,
+        status: info.status,
+        canRequestAds: !!info.canRequestAds,
+        privacyOptionsRequired: info.privacyOptionsRequirementStatus === 'REQUIRED',
       };
       log('UMP sonucu:', Pampit.consent);
-
       if (!Pampit.consent.canRequestAds) {
-        /* Kullanıcı temel izinleri vermedi. Reklam gösteremeyiz ama
-           OYUN ÇALIŞMAYA DEVAM EDER. Reklamı zorunlu tutmak hem Apple
-           5.1.1 hem de kullanıcı deneyimi açısından yanlış olurdu. */
-        log('onay alınamadı — reklamsız devam');
+        /* Oyuncu izin vermedi: reklam yok ama OYUN AYNEN ÇALIŞIR.
+           Reklamı zorunlu tutmak Apple 5.1.1'e de aykırı olurdu. */
+        log('onay yok — reklamsız devam');
         return false;
       }
 
-      // --- 2) ATT (yalnız iOS, yalnız onay sonrası) ------------------------
-      if (IOS && P.AppTrackingTransparency) {
+      // --- 2) ATT (yalnız iOS) ----------------------------------------------
+      if (IOS) {
         try {
-          const att = await P.AppTrackingTransparency.getStatus();
-          if (att.status === 'notDetermined') {
-            const asked = await P.AppTrackingTransparency.requestPermission();
-            log('ATT sonucu:', asked.status);
-          } else {
-            log('ATT zaten belirlenmiş:', att.status);
-          }
+          const att = await AdPlugin.attStatus();
+          if (att.status === 'notDetermined') await AdPlugin.attRequest();
+          log('ATT:', (await AdPlugin.attStatus()).status);
         } catch (e) {
-          /* ATT reddi ölümcül değil: reklam yine gösterilir, sadece IDFA
-             gönderilmez (kişiselleştirilmemiş reklam, daha düşük gelir). */
+          /* ATT reddi/hatası ölümcül değil: reklam yine gelir, yalnız
+             kişiselleştirilmemiş olur (gelir biraz düşer). */
           log('ATT hatası (yok sayıldı):', e && e.message);
         }
       }
 
-      // --- 3) SDK ---------------------------------------------------------
+      // --- 3) SDK -----------------------------------------------------------
       await AdPlugin.initialize({
-        /* Oyunda mafya haracı, sabotaj ve bir cinayet sonu var.
-           Bu yüzden reklam içeriğini "Teen" ile sınırlıyoruz; yaş
-           derecesiyle tutarlı olmayan reklam envanteri gelmesin. */
-        maxAdContentRating: 'T',
+        /* Oyunda mafya haracı, sabotaj ve bir cinayet haberi var (13+).
+           Reklam envanteri de buna uygun: en fazla "Teen". */
+        maxAdContentRating: AD_CONFIG.maxAdContentRating,
         tagForChildDirectedTreatment: false,
-        // testDeviceIds: ['CİHAZ_ID'],   // geliştirme sırasında doldur
+        tagForUnderAgeOfConsent: false,
+        initializeForTesting: AD_CONFIG.testDevices.length > 0,
+        testingDevices: AD_CONFIG.testDevices.slice(),
       });
+
+      // Olayları TEK kez dinle; her gösterimin durumu _cur nesnesinde
+      AdPlugin.on(EV.rewarded,     () => { if (_cur) _cur.earned = true; });
+      AdPlugin.on(EV.dismissed,    () => { if (_cur) _cur.finish(); });
+      AdPlugin.on(EV.failedToShow, (e) => { if (_cur) { _cur.error = (e && e.message) || 'show'; _cur.finish(); } });
 
       Pampit.adsReady = true;
-      log('reklam SDK hazır');
-
-      // Ödül olayını tek yerden dinliyoruz
-      AdPlugin.addListener('rewardEarned', (ev) => {
-        log('ödül kazanıldı:', ev.amount, ev.type);
-        _rewardEarned = true;
-      });
-      AdPlugin.addListener('adDismissed', () => { _adOpen = false; });
-      AdPlugin.addListener('adFailedToShow', () => { _adOpen = false; });
-
+      log('reklam SDK hazır', AD_CONFIG.testMode ? '(TEST MODU)' : '');
+      prefetch();                       // ilk reklamı arkada hazırla
       return true;
     } catch (e) {
-      log('onay/başlatma hatası:', e && e.message);
+      log('onay/başlatma hatası:', e && (e.message || e));
       return false;
     }
   }
 
-  /** Gizlilik ayarları düğmesi — privacyOptionsRequired true ise göster. */
+  /** Gizlilik seçenekleri formu (Ayarlar'daki düğme). */
   Pampit.showPrivacyOptions = async function () {
-    if (!Pampit.adsReady) return;
-    try { await AdPlugin.showPrivacyForm(); }
+    if (!NATIVE || !ADMOB) return;
+    try { await AdPlugin.privacyForm(); }
     catch (e) { log('gizlilik formu hatası:', e && e.message); }
   };
 
   // ==========================================================================
   //  3. ÖDÜLLÜ REKLAM
   // ==========================================================================
+  /* Test modunda Google'ın resmi test birimi AÇIKÇA verilir (isTesting de
+     true). Eklenti isTesting'de zaten test birimine geçiyor (iOS kaynağı:
+     getAdId); yine de gerçek birimi test modunda hiç göndermiyoruz —
+     eklenti davranışı bir sürümde değişirse hesap riske girmesin. */
+  const GOOGLE_TEST_REWARDED = { ios: 'ca-app-pub-3940256099942544/1712485313', android: 'ca-app-pub-3940256099942544/5224354917' };
+  const unitId = () => AD_CONFIG.testMode ? GOOGLE_TEST_REWARDED[IOS ? 'ios' : 'android']
+                                          : (IOS ? AD_CONFIG.ios : AD_CONFIG.android).rewarded;
 
-  /* Google'ın resmi TEST birimleri. Yayına çıkmadan kendi birimlerinle
-     değiştir — geliştirme sırasında kendi biriminle test etmek AdMob
-     hesabının askıya alınmasına yol açar. */
-  const AD_UNITS = {
-    rewarded: {
-      ios:     'ca-app-pub-3940256099942544/1712485313',
-      android: 'ca-app-pub-3940256099942544/5224354917',
-    },
-  };
-  const unit = (kind) => AD_UNITS[kind][IOS ? 'ios' : 'android'];
+  /* Önceden yükleme: reklam düğmeye basılınca değil, ÖNCEDEN hazırlanır;
+     böylece oyuncu basınca 2–5 sn beklemez. Hazır reklam ~1 saat geçerli. */
+  let _loaded = false, _loading = null, _loadedAt = 0;
+  function prefetch() {
+    if (!Pampit.adsReady || _loading || (_loaded && Date.now() - _loadedAt < 50 * 60 * 1000)) return _loading;
+    _loading = AdPlugin.prepareRewarded({ adId: unitId(), isTesting: AD_CONFIG.testMode })
+      .then(() => { _loaded = true; _loadedAt = Date.now(); log('ödüllü reklam hazır'); return true; })
+      .catch((e) => { _loaded = false; log('reklam yüklenemedi:', e && (e.message || e)); return false; })
+      .finally(() => { _loading = null; });
+    return _loading;
+  }
 
-  let _rewardEarned = false;
-  let _adOpen = false;
+  /* Gösterimin durumu. ÖNEMLİ: eklentinin showRewardVideoAd() sözü YALNIZ
+     ödül kazanılınca çözülüyor (iOS kaynağı: userDidEarnRewardHandler);
+     oyuncu reklamı yarıda kapatırsa söz HİÇ çözülmüyor. Bu yüzden sonucu
+     "kapatıldı" olayından okuyoruz; söze güvenip beklemiyoruz. */
+  let _cur = null;
 
   /**
    * Ödüllü reklam göster.
    * @returns {Promise<boolean>} ödül hak edildi mi
-   *
-   * KURAL: bu fonksiyon YALNIZ kullanıcının bastığı bir düğmeden çağrılır.
-   * Otomatik/zorunlu gösterim hem Apple hem Google politikasına aykırı.
+   * Pampit.lastAd: 'rewarded' | 'closed' (yarıda kapatıldı) | 'failed'
+   * KURAL: YALNIZ oyuncunun bastığı bir düğmeden çağrılır.
    */
+  Pampit.lastAd = null;
   Pampit.showRewardedAd = async function () {
-    if (!Pampit.adsReady) { log('reklam hazır değil'); return false; }
-    if (!Pampit.online)   { log('çevrimdışı — reklam yok'); return false; }
-    if (_adOpen)          { log('zaten bir reklam açık'); return false; }
+    if (!Pampit.adsReady) { Pampit.lastAd = 'failed'; log('reklam hazır değil'); return false; }
+    if (!Pampit.online)   { Pampit.lastAd = 'failed'; log('çevrimdışı — reklam yok'); return false; }
+    if (_cur)             { log('zaten bir reklam açık'); return false; }
 
-    _rewardEarned = false;
-    _adOpen = true;
-    try {
-      const { id } = await AdPlugin.loadRewarded({ adUnitId: unit('rewarded') });
-      await AdPlugin.showRewarded({ id });
+    if (!_loaded) { const ok = await (prefetch() || Promise.resolve(false)); if (!ok) { Pampit.lastAd = 'failed'; return false; } }
 
-      /* showRewardedAd çözüldüğünde reklam kapanmış olur; ödül olayı
-         ondan önce gelir. Yine de küçük bir pay bırakıyoruz. */
-      await new Promise(r => setTimeout(r, 120));
-      return _rewardEarned;
-    } catch (e) {
-      log('reklam hatası:', e && (e.code || e.message));
-      return false;
-    } finally {
-      _adOpen = false;
-    }
+    const audio = window.PampitAudio;
+    try { if (audio && audio.adPause) audio.adPause(true); } catch (_) {}   // reklam sesi oyunla karışmasın
+
+    const res = await new Promise((resolve) => {
+      const st = _cur = { earned: false, error: null, done: false,
+        finish() { if (st.done) return; st.done = true; setTimeout(() => resolve(st), 150); } };
+      _loaded = false;                  // bir reklam bir kez gösterilir
+      AdPlugin.showRewarded()
+        .then(() => { st.earned = true; })                       // ödül kazanıldı (kapanmayı bekle)
+        .catch((e) => { st.error = (e && e.message) || 'show'; st.finish(); });
+      // Güvenlik: kapanma olayı hiç gelmezse 3 dk sonra serbest bırak
+      setTimeout(() => st.finish(), 3 * 60 * 1000);
+    });
+    _cur = null;
+
+    try { if (audio && audio.adPause) audio.adPause(false); } catch (_) {}
+    setTimeout(prefetch, 1500);         // sıradaki reklamı hazırla
+
+    Pampit.lastAd = res.earned ? 'rewarded' : (res.error ? 'failed' : 'closed');
+    log('reklam sonucu:', Pampit.lastAd, res.error || '');
+    return res.earned;
   };
 
-  /** Reklam şu an gösterilebilir mi? Düğmeleri sönükleştirmek için. */
-  Pampit.canShowAd = () => Pampit.adsReady && Pampit.online && !_adOpen;
+  /** Reklam şu an gösterilebilir mi? Düğmeleri çizmek/söndürmek için. */
+  Pampit.canShowAd = () => Pampit.adsReady && Pampit.online && !_cur;
+  Pampit.adLoaded = () => _loaded;
 
   // ==========================================================================
   //  4. NATIVE ÖZELLİKLER
@@ -24201,11 +24404,16 @@ PampitI18n.registerPatterns("ar", {
   const A = window.PampitAudio = {};
 
   let ctx = null;
-  let master = null, busUi = null, busSfx = null, busAmb = null;
+  let master = null, out = null, busUi = null, busSfx = null, busAmb = null;
+  let musicNode = null, musicGain = null;      // 0.5.4: müzik Web Audio'dan geçiyor (iOS'ta ses düzeyi için)
   let unlocked = false;
   let noiseBuf = null;
 
   A.enabled = true;
+  /* 0.5.4: "bütün sesler" ayarı kalıcı. Eskiden kaydedilmiyordu; oyun her
+     açılışta sesli başlıyordu. Oyun kaydı da (G.soundOn) taşıyor. */
+  try { if (localStorage.getItem('pampit-sound') === '0') A.enabled = false; } catch (e) {}
+  let _adPaused = false;             // tam ekran reklam açık mı (bkz. A.adPause)
   A.volume = 0.85;
   /* Yol kazançları (eskiden arayüz 0.9, efekt 1.0) */
   const UI_GAIN = 2.6, SFX_GAIN = 1.8;
@@ -24251,15 +24459,28 @@ PampitI18n.registerPatterns("ar", {
          3) arayüz sesleri yeniden tasarlandı (aşağıda): ikinci harmonik +
             kısa tık geçişi — küçük hoparlörün iyi verdiği 1–4 kHz bandında
             enerji, biraz daha uzun sönüm */
+    /* 0.5.4 · "BÜTÜN SESLER" KAPISI. Oyuncu: "sesi kapatınca bile ses
+       geliyor". Eskiden kapatma yalnız `master`'ı kısıyordu; ama
+         · sentez müzik yedeği master'ı ATLAYIP doğrudan sınırlayıcıya bağlıydı,
+         · ses kaydırıcısı (setVolume) kapalıyken master'ı GERİ AÇIYORDU,
+         · müzik (<audio>) iOS'ta hiç susmuyordu: iOS'ta audio.volume SALT
+           OKUNUR (hep 1), musicPause "ses 0'a inince durdur" bekliyordu →
+           ses hiç inmiyor, müzik hiç durmuyordu.
+       Artık her şey TEK kapıdan geçiyor: out. Kapalıyken out = 0, müzik
+       anında duruyor, döngüler (pompa, dizel, ortam, sentez) kesiliyor ve
+       ses bağlamı askıya alınıyor (pil de harcamıyor). */
+    out = ctx.createGain();
+    out.gain.value = A.enabled ? 1 : 0;
     master = ctx.createGain();
     master.gain.value = A.volume;
+    master.connect(out);
     const limit = ctx.createWaveShaper();
     { const N = 2048, K = 1.2, c = new Float32Array(N), tk = Math.tanh(K);
       for (let i = 0; i < N; i++) { const x = (i / (N - 1)) * 2 - 1; c[i] = Math.tanh(K * x) / tk; }
       limit.curve = c; limit.oversample = '2x'; }
-    master.connect(limit); limit.connect(ctx.destination);
+    out.connect(limit); limit.connect(ctx.destination);
     const comp = null, makeup = null;
-    A._chain = { comp, makeup, limit, master };
+    A._chain = { comp, makeup, limit, master, out };
 
     /* Üç yol: arayüz, dünya efektleri, ortam. Ayrı olmaları önemli —
        oyun hızı 4×'e çıkınca dünya sesleri kısılıyor ama arayüz sesleri
@@ -24283,8 +24504,10 @@ PampitI18n.registerPatterns("ar", {
     init();
     if (!ctx) return;
     setSession();
-    if (ctx.state === 'suspended') ctx.resume();
     unlocked = true;
+    routeMusic();
+    if (!A.enabled) { try { ctx.suspend(); } catch (e) {} return; }   // ses kapalı açıldıysa uyandırma
+    if (ctx.state === 'suspended') ctx.resume();
     /* Müzik ilk dokunuşta başlıyor: tarayıcılar otomatik oynatmaya izin
        vermiyor. Reddedilirse armRetry() devreye giriyor. */
     if (A.enabled && musicWanted) A.musicPlay();
@@ -24665,10 +24888,10 @@ PampitI18n.registerPatterns("ar", {
   // ==========================================================================
   //  MÜZİK
   // ==========================================================================
-  /* Müzik bir HTMLAudioElement; Web Audio grafiğine BAĞLANMIYOR.
-     Sebep: uzun bir mp3'ü decodeAudioData ile çözmek onlarca MB bellek
-     yiyor ve mobilde açılışı kilitliyor. <audio> etiketi akış (streaming)
-     yapıyor, bellekte tutmuyor.
+  /* Müzik bir HTMLAudioElement (akış yapar, mp3'ü belleğe çözmez).
+     0.5.4: ilk dokunuşta createMediaElementSource ile Web Audio'ya
+     BAĞLANIYOR (bkz. routeMusic) — çözme yok, yine akış; ama düzeyi artık
+     bir GainNode yönetiyor, çünkü iOS'ta audio.volume salt okunur.
 
      Ses düzeyi ayrı tutuluyor: efektler kısılsa da müzik açık kalabilsin. */
   let music = null;
@@ -24728,7 +24951,7 @@ PampitI18n.registerPatterns("ar", {
     /* loop bayrağı bazı tarayıcılarda uzun dosyalarda ıskalanıyor;
        'ended' olayı ikinci güvenlik. */
     music.addEventListener('ended', () => {
-      if (musicWanted && A.enabled) { music.currentTime = 0; music.play().catch(()=>{}); }
+      if (musicWanted && A.enabled && !_adPaused) { music.currentTime = 0; music.play().catch(()=>{}); }
     });
     music.addEventListener('error', () => {
       const e = music.error;
@@ -24740,7 +24963,7 @@ PampitI18n.registerPatterns("ar", {
         srcIndex++;
         music.src = srcChain[srcIndex];
         music.load();
-        if (musicWanted && A.enabled) music.play().catch(() => armRetry());
+        if (musicWanted && A.enabled && !_adPaused) music.play().catch(() => armRetry());
         return;
       }
       /* Hiçbir kaynak tutmadı. Bu genelde ORTAM kısıtı: bazı gömülü
@@ -24757,9 +24980,36 @@ PampitI18n.registerPatterns("ar", {
     return music;
   };
 
+  /* <audio> öğesini Web Audio'ya bağla (bir kez, ilk dokunuşta). iOS'ta
+     audio.volume salt okunur olduğu için müziğin düzeyi ve kısılması ANCAK
+     böyle çalışıyor. Bağlanamazsa (eski tarayıcı) öğenin kendi düzeyine
+     düşülür; masaüstünde o yol zaten çalışıyor. */
+  function routeMusic() {
+    if (musicNode || !ctx || !music || !out) return;
+    try {
+      musicNode = ctx.createMediaElementSource(music);
+      musicGain = ctx.createGain();
+      /* çalmıyorsa 0'dan başla (musicPlay yumuşakça açar). iOS'ta music.volume
+         hep 1 okunduğu için eskiden buradan TAM SESLE patlayarak başlıyordu. */
+      musicGain.gain.value = music.paused ? 0 : Math.min(music.volume, A.musicVolume);
+      musicNode.connect(musicGain); musicGain.connect(out);
+      music.volume = 1;                              // düzeyi artık musicGain yönetiyor
+    } catch (e) { musicNode = null; musicGain = null; console.warn('[PampitAudio] müzik Web Audio\'ya bağlanamadı', e); }
+  }
+  const mVol = () => musicGain ? musicGain.gain.value : (music ? music.volume : 0);
+  function setMVol(v) {
+    v = Math.max(0, Math.min(1, v));
+    if (musicGain) { musicGain.gain.cancelScheduledValues(ctx.currentTime); musicGain.gain.value = v; }
+    else if (music) music.volume = v;
+  }
+  A._musicLevel = mVol;                              // test için
+
   A.musicPlay = function () {
-    if (!A.enabled || !musicWanted) return;
+    if (!A.enabled || !musicWanted || _adPaused) return;
     if (!music) A.musicInit();
+    routeMusic();
+    // müzik artık bağlamdan geçiyor: bağlam uyuyorsa (iOS 'interrupted' dahil) uyandır
+    if (musicNode && ctx && ctx.state !== 'running' && ctx.state !== 'closed') { try { ctx.resume(); } catch (e) {} }
     const p = music.play();
     if (p && p.then) {
       p.then(() => fadeMusic(A.musicVolume, 1.5))
@@ -24781,7 +25031,7 @@ PampitI18n.registerPatterns("ar", {
     if (retryArmed) return;
     retryArmed = true;
     const tryAgain = () => {
-      if (!music || !musicWanted || !A.enabled) { cleanup(); return; }
+      if (!music || !musicWanted || !A.enabled || _adPaused) { cleanup(); return; }
       if (!music.paused) { cleanup(); return; }
       const p = music.play();
       if (p && p.then) p.then(() => { fadeMusic(A.musicVolume, 1.2); cleanup(); })
@@ -24807,7 +25057,7 @@ PampitI18n.registerPatterns("ar", {
   let synthOn = false, synthGain = null, synthTimer = null;
 
   function startSynthMusic() {
-    if (synthOn) return;
+    if (synthOn || !A.enabled) return;
     init(); if (!ctx) return;
     synthOn = true;
 
@@ -24817,7 +25067,7 @@ PampitI18n.registerPatterns("ar", {
        müzik sıkıştırıcıyı hep baskıda tutar, arayüz sesleri onun altında
        ezilirdi. Doğrudan son sınırlayıcıya bağlı; efekt ses düzeyi
        kaydırıcısı (master) müziği etkilemiyor — müziğin kendi kaydırıcısı var. */
-    synthGain.connect((A._chain && A._chain.limit) || master || ctx.destination);
+    synthGain.connect(out || ctx.destination);     // 0.5.4: "bütün sesler" kapısından geçer
 
     /* La minör civarı, hüzünlü ama ağır olmayan bir dizi. */
     const CHORDS = [
@@ -24882,24 +25132,28 @@ PampitI18n.registerPatterns("ar", {
     if (v <= 0.001) stopSynthMusic();
   }
 
-  A.musicPause = function () {
+  /* 0.5.4: eskiden "düzey 0'a inince durdur" bekliyordu; iOS'ta düzey hiç
+     inmediği için müzik HİÇ durmuyordu. Artık kısa bir kısılma ve KESİN durdurma. */
+  A.musicPause = function (instant) {
     if (!music) return;
-    fadeMusic(0, 0.8);
-    setTimeout(() => { if (music && music.volume < 0.01) music.pause(); }, 900);
+    if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null; }
+    if (instant) { setMVol(0); try { music.pause(); } catch (e) {} return; }
+    fadeMusic(0, 0.35);
+    setTimeout(() => { if (music && (!A.enabled || !musicWanted || _adPaused || mVol() < 0.01)) { try { music.pause(); } catch (e) {} } }, 400);
   };
 
   /* Yumuşak geçiş — ani başlayan/kesilen müzik rahatsız ediyor. */
   let fadeTimer = null;
   function fadeMusic(target, seconds) {
     if (!music) return;
-    if (!musicWanted && target > 0) return;   // kapalıyken geri açma
+    if ((!musicWanted || !A.enabled) && target > 0) return;   // kapalıyken geri açma
     if (fadeTimer) clearInterval(fadeTimer);
-    const step = 40, from = music.volume;
+    const step = 40, from = mVol();
     const n = Math.max(1, Math.round(seconds * 1000 / step));
     let i = 0;
     fadeTimer = setInterval(() => {
       i++;
-      music.volume = Math.max(0, Math.min(1, from + (target - from) * (i / n)));
+      setMVol(from + (target - from) * (i / n));
       if (i >= n) { clearInterval(fadeTimer); fadeTimer = null; }
     }, step);
   }
@@ -24916,12 +25170,13 @@ PampitI18n.registerPatterns("ar", {
        geri açıyordu; kullanıcı müziği kapatamıyordu. */
     if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null; }
     if (!musicWanted) {
-      music.volume = 0;
+      setMVol(0);
       try { music.pause(); } catch (e) {}
       stopSynthMusic();                 // sentez yedeği de sussun
       return;
     }
-    music.volume = A.musicVolume;
+    if (!A.enabled) return;             // bütün sesler kapalıyken kaydırıcı müziği AÇMAZ
+    setMVol(A.musicVolume);
     syncSynthVolume();
     if (music.paused && !A.synthActive) A.musicPlay();
   };
@@ -24933,7 +25188,11 @@ PampitI18n.registerPatterns("ar", {
       anaSes: master?+master.gain.value.toFixed(2):'yok',
       efektYolu: busSfx?+busSfx.gain.value.toFixed(2):'yok',
       efektSesi:A.volume, muzikSesi:A.musicVolume,
-      muzikIstendi:musicWanted, muzikCaliyor: !!music && !music.paused };
+      muzikIstendi:musicWanted, muzikCaliyor: !!music && !music.paused,
+      // 0.5.4: kapı ve döngüler (tools/round22-live.js okur)
+      kapi: out ? +out.gain.value.toFixed(3) : 'yok', muzikWebAudio: !!musicNode,
+      muzikDuraklatildi: music ? music.paused : null,
+      donguler: { pompa: !!flow, dizel: !!diesel, sentez: !!synthOn } };
   };
   /** Test sesi: efekt yolu çalışıyor mu, kulakla doğrula. */
   A.test = function(){ A.unlock(); A.confirm(); setTimeout(A.cash,250); };
@@ -24949,7 +25208,7 @@ PampitI18n.registerPatterns("ar", {
       dongu: music.loop,
       sure: music.duration,
       konum: music.currentTime,
-      sesDuzeyi: music.volume,
+      sesDuzeyi: mVol(), webAudio: !!musicNode,
       istendi: musicWanted,
       hazirDurumu: music.readyState,   // 4 = tamamen hazır
     };
@@ -24959,7 +25218,7 @@ PampitI18n.registerPatterns("ar", {
   document.addEventListener('visibilitychange', () => {
     if (!music) return;
     if (document.hidden) music.pause();
-    else if (musicWanted && A.enabled) A.musicPlay();
+    else if (musicWanted && A.enabled && !_adPaused) A.musicPlay();
   });
 
   // ==========================================================================
@@ -25029,11 +25288,11 @@ PampitI18n.registerPatterns("ar", {
     getBytes(window.PAMPIT_AMBIENT || A.ambientSrc)
       .then(ab => new Promise((res, rej) => {        // eski Safari yalnız geri çağırmalı sürümü tanıyor
         const p = ctx.decodeAudioData(ab, res, rej); if (p && p.then) p.then(res, rej); }))
-      .then(buf => { ambBuf = prepLoop(buf); ambLoading = false; if (ambWanted) ambStart(); })
+      .then(buf => { ambBuf = prepLoop(buf); ambLoading = false; if (ambWanted && A.enabled && !_adPaused) ambStart(); })
       .catch(e => { ambLoading = false; console.warn('[PampitAudio] ortam sesi yüklenemedi', e); });
   }
   function ambStart() {
-    if (!ctx || !busAmb) return;
+    if (!ctx || !busAmb || !A.enabled) return;
     if (!ambBuf) { ambLoad(); return; }
     if (amb) return;
     const src = ctx.createBufferSource();
@@ -25072,7 +25331,7 @@ PampitI18n.registerPatterns("ar", {
   document.addEventListener('visibilitychange', () => {
     if (!unlocked) return;
     if (document.hidden) ambStop(0.2);
-    else if (ambWanted && A.enabled) ambStart();
+    else if (ambWanted && A.enabled && !_adPaused) ambStart();
   });
 
   // ==========================================================================
@@ -25088,14 +25347,53 @@ PampitI18n.registerPatterns("ar", {
 
   A.setVolume = function (v) {
     A.volume = Math.max(0, Math.min(1, v));
+    /* 0.5.4: master artık "bütün sesler" kapısının (out) ÖNÜNDE. Ses kapalıyken
+       kaydırıcıyı oynatmak eskiden sesi geri açıyordu; şimdi yalnız düzeyi
+       saklıyor, kapı kapalı kaldıkça hiçbir şey duyulmuyor. */
     if (master) master.gain.setTargetAtTime(A.volume, now(), 0.1);
   };
+  /* 0.5.1 · TAM EKRAN REKLAM: iOS'ta reklam açılınca WebView'e
+     visibilitychange GELMİYOR; müzik ve otoyol uğultusu reklamın sesinin
+     altında çalmaya devam ediyordu. pampit-native.js reklamdan hemen önce
+     adPause(true), kapanınca adPause(false) çağırıyor. Oyuncunun ses
+     ayarı (A.enabled) korunur: ses kapalıysa dönüşte de kapalı kalır. */
+  A.adPause = function (on) {
+    if (on === _adPaused) return;
+    _adPaused = !!on;
+    if (on) {
+      A.musicPause(true);
+      if (unlocked) ambStop(0.05);
+      if (out) out.gain.setTargetAtTime(0, now(), 0.03);
+    } else if (A.enabled) {
+      if (out) out.gain.setTargetAtTime(1, now(), 0.08);
+      if (musicWanted) A.musicPlay();
+      if (ambWanted && unlocked) ambStart();
+    }
+  };
+  A.isAdPaused = () => _adPaused;
+
   A.setEnabled = function (on) {
     A.enabled = !!on;
-    if (master) master.gain.setTargetAtTime(on ? A.volume : 0.0001, now(), 0.1);
+    try { localStorage.setItem('pampit-sound', A.enabled ? '1' : '0'); } catch (e) {}   // menüde de hatırlansın
     setSession();
-    if (on) { if (musicWanted) A.musicPlay(); } else A.musicPause();
-    if (on) { if (ambWanted && unlocked) ambStart(); } else ambStop(0.3);   // ortam da ses anahtarına bağlı
+    if (!A.enabled) {
+      /* KESİN SESSİZLİK: kapı 0, müzik durur, bütün döngüler kesilir,
+         bağlam askıya alınır. */
+      if (out) { out.gain.cancelScheduledValues(now()); out.gain.setTargetAtTime(0, now(), 0.02); }
+      A.musicPause(true);
+      stopSynthMusic();
+      ambStop(0.05);
+      if (flow) { const f = flow; flow = null; try { f.src.stop(); } catch (e) {} }   // pompa akışı
+      if (diesel) { const d = diesel; diesel = null; try { d.osc.stop(); d.osc2.stop(); } catch (e) {} }
+      if (ctx && ctx.state === 'running') setTimeout(() => { if (!A.enabled && ctx) { try { ctx.suspend(); } catch (e) {} } }, 120);
+      return;
+    }
+    if (ctx) {
+      try { if (ctx.state === 'suspended') ctx.resume(); } catch (e) {}
+      if (out && !_adPaused) { out.gain.cancelScheduledValues(now()); out.gain.setTargetAtTime(1, now(), 0.05); }
+    }
+    if (musicWanted) A.musicPlay();
+    if (ambWanted && unlocked) ambStart();
   };
 
   // ==========================================================================
@@ -25305,8 +25603,12 @@ PampitI18n.registerPatterns("ar", {
       if (!countKey) markUsed(key);
       try { onReward(); } catch (e) { console.error('[PampitAds] ödül hatası', e); }
       if (window.save) save();
-    } else {
-      if (window.toast) toast(tr('Reklam yüklenemedi, ödül verilmedi.'), 'bad');
+    } else if (window.toast) {
+      /* 0.5.1: yarıda kapatmak ile yüklenememek ayrı mesaj. Eskiden ikisi de
+         "yüklenemedi" diyordu; reklamı kendisi kapatan oyuncuya yanlış bilgi. */
+      const r = window.PampitNative && PampitNative.lastAd;
+      toast(tr(r === 'closed' ? 'Reklam yarıda kapandı, ödül verilmedi.'
+                             : 'Reklam yüklenemedi, ödül verilmedi.'), 'bad');
     }
     return ok;
   }
@@ -26123,7 +26425,7 @@ window.PAMPIT_DEV = (function(){
   // ==========================================================================
   function toNDC(e) {
     ptr.x = (e.clientX / innerWidth) * 2 - 1;
-    ptr.y = -(e.clientY / innerHeight) * 2 + 1;
+    ptr.y = -(e.clientY / (window.appH ? appH() : innerHeight)) * 2 + 1;   // 0.5.3: PWA alt boşluğu
   }
 
   function groundPoint(e) {
@@ -26834,7 +27136,7 @@ const CFG = {
      package.json ile AYNI olmalı (tools/release-check.js denetler); ana menünün
      altında ve Ayarlar'ın en altında küçük yazıyla görünür. Değişiklik listesi:
      SURUM.md */
-  version:'0.5.0',
+  version:'0.5.4',
   startCash: 50000,
   dayStart: 6, dayEnd: 24,          // istasyon 24 saat açık, oyun 06:00'da başlar
   secPerGameHour: 10,               // 1 oyun saati = 10 sn -> gün ~4 dk
@@ -28413,6 +28715,10 @@ function setCurrency(){
   else { CURSYM='$'; CURRATE=FX_USD; CURLOC='en-US'; }
 }
 const money=n=>CURSYM+Math.round(n*CURRATE).toLocaleString(CURLOC);
+/* 0.5.1: ev modülü (pampit-home.js) para biçimini window.money'den okuyor; const
+   üst düzeyde window'a düşmüyor → ev fiyatı "450000" diye çıplak yazılıyordu.
+   (SIM CORE Node'da da çalışıyor: window yoksa atla.) */
+if(typeof window!=='undefined') window.money=money;
 const cur2 =n=>CURSYM+(n*CURRATE).toFixed(2);          // litre fiyatı vb.
 const curS =n=>CURSYM+short(Math.round(n*CURRATE));    // kısaltılmış (12K/1.4M)
 
@@ -32298,7 +32604,7 @@ function plane(w,d,m,x,y,z,p){ const o=new THREE.Mesh(new THREE.PlaneGeometry(w,
   return o; }
 const GROUND_LINES=[]; let LINE_REG=false;
 function lineK(base){
-  const h=(typeof innerHeight!=='undefined'&&innerHeight)||700, z=(typeof camZoom!=='undefined'&&camZoom)||40;
+  const h=(typeof appH==='function'?appH():(typeof innerHeight!=='undefined'&&innerHeight))||700, z=(typeof camZoom!=='undefined'&&camZoom)||40;
   return Math.min(3.0, Math.max(1, (3.0*z/h)/base));   // 3 CSS piksel = kaç metre
 }
 function updateGroundLines(){
@@ -32443,7 +32749,7 @@ function autoQuality(){
   if(mem<=3 || cores<=4) return 'low';
   // Tablette doldurulacak piksel çok daha fazla; yine de "orta" ile başlıyoruz,
   // ısınırsa oyuncu ayarlardan düşürebiliyor.
-  const big = Math.max(innerWidth,innerHeight) >= 1000;
+  const big = Math.max(innerWidth,appH()) >= 1000;
   return big ? 'low' : 'medium';
 }
 /* Depolama engelliyse (gizli sekme, kapalı site verisi, bazı WebView'lar)
@@ -32469,8 +32775,8 @@ function applySize(){
   const q=qCfg();
   const pr=Math.min(devicePixelRatio, q.pr);
   renderer.setPixelRatio(pr);
-  renderer.setSize(innerWidth,innerHeight);
-  if(window.PampitPost && PampitPost.enabled) PampitPost.setSize(innerWidth,innerHeight,pr);
+  renderer.setSize(innerWidth,appH());
+  if(window.PampitPost && PampitPost.enabled) PampitPost.setSize(innerWidth,appH(),pr);
 }
 let _shadowSig='';
 function applyQuality(){
@@ -32503,7 +32809,7 @@ function initThree(){
   if(post) PampitPost.init(renderer);
   renderer.domElement.id='c';   // menüde bulanıklaştırmak için
   renderer.setPixelRatio(Math.min(devicePixelRatio,q0.pr));
-  renderer.setSize(innerWidth,innerHeight);
+  renderer.setSize(innerWidth,appH());
   renderer.setClearColor(0xCBE3E8,1);
   renderer.shadowMap.enabled=q0.shadow>0;
   // PCFSoft en pahalı filtre; PCF neredeyse aynı görünüp belirgin ucuz.
@@ -32529,7 +32835,7 @@ function initThree(){
   }
   LEAF1=leafMat(C.fern); LEAF2=leafMat(C.moss);
 
-  const a=innerWidth/innerHeight;
+  const a=innerWidth/appH();
   camera=new THREE.OrthographicCamera(-camZoom*a/2,camZoom*a/2,camZoom/2,-camZoom/2,-400,800);
   camera.position.set(60,58,60); camera.lookAt(0,0,0);
 
@@ -39808,7 +40114,7 @@ function updateQueueChip(){
   if(_pqEl._full!==full){ _pqEl._full=full; _pqEl.classList.toggle('full',full); }
   _pqV.set(ENTRY.x-2,5.5,ROAD_EDGE+1).project(camera);
   domSet(_pqEl,'left',((_pqV.x*0.5+0.5)*innerWidth).toFixed(1)+'px');
-  domSet(_pqEl,'top',((-_pqV.y*0.5+0.5)*innerHeight).toFixed(1)+'px');
+  domSet(_pqEl,'top',((-_pqV.y*0.5+0.5)*appH()).toFixed(1)+'px');
   if(_pqEl._hid!==false){ _pqEl._hid=false; _pqEl.classList.remove('hidden'); }
 }
 function tapHide(){ if(!tapEl._hid){ tapEl._hid=true; tapEl.classList.add('hidden'); } }
@@ -39837,7 +40143,7 @@ function updateTapMarker(){
   const big=isShop||isTea; if(tapEl._big!==big){ tapEl._big=big; tapEl.classList.toggle('big',big); }
   if(tapEl._hid!==false){ tapEl._hid=false; tapEl.classList.remove('hidden'); }
   domSet(tapEl,'left', ((v.x*0.5+0.5)*innerWidth).toFixed(1)+'px');
-  domSet(tapEl,'top',  ((-v.y*0.5+0.5)*innerHeight).toFixed(1)+'px');
+  domSet(tapEl,'top',  ((-v.y*0.5+0.5)*appH()).toFixed(1)+'px');
   // Rehberli öğreticide araç geldiği anda hedef işaretlenir ve zaman durur
   if(G.guideWaiting && guideOn()){
     G.guideWaiting=false;
@@ -40012,7 +40318,7 @@ function tutHandTick(){
   const b=el.getBoundingClientRect();
   if(b.width<2||b.height<2){ h.classList.add('hidden'); r.classList.add('hidden'); return; }
   /* El hedefin ALTINDA duruyor; ekranın dibine taşarsa üstüne geçiyor. */
-  const below = b.bottom+46 < innerHeight;
+  const below = b.bottom+46 < appH();
   h.style.left=(b.left+b.width/2)+'px';
   h.style.top =(below? b.bottom+4 : b.top-44)+'px';
   h.textContent = below? '\u261D\uFE0F' : '\uD83D\uDC46';
@@ -41304,13 +41610,13 @@ function setTimeOfDay(h){
 }
 /* ============================ KAMERA & GİRDİ ============================ */
 function fitZoom(){
-  const a=innerWidth/innerHeight;
+  const a=innerWidth/appH();
   return clamp(a<0.75? 36/a*0.72 : 42, 32, 74);
 }
 /* SADECE izdüşümü günceller — ucuz, her karede çağrılabilir.
    Yakınlaştırma bunu kullanıyor. */
 function applyZoom(){
-  const a=innerWidth/innerHeight;
+  const a=innerWidth/appH();
   camera.left=-camZoom*a/2; camera.right=camZoom*a/2;
   camera.top=camZoom/2; camera.bottom=-camZoom/2;
   camera.updateProjectionMatrix();
@@ -41368,6 +41674,10 @@ function bindInput(){
   let pinchStart=null, pinchZoom0=1, pinchGuard=0;
 
   el.addEventListener('pointerdown',e=>{
+    /* 0.5.3: ev açıkken istasyon kamerası dokunuşları HİÇ almıyor. Eskiden
+       evde sürüklerken arkadaki istasyon kamerası da kayıyor, kısa
+       dokunuş arkadaki bir aracı seçip pompa panelini açabiliyordu. */
+    if(window.PampitHome && PampitHome.isOpen()) return;
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pointers.size===1){
       drag={x:e.clientX,y:e.clientY,moved:0,t:Date.now(),id:e.pointerId};
@@ -41400,7 +41710,7 @@ function bindInput(){
     if(!drag || e.pointerId!==drag.id) return;
     const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
     drag.moved+=Math.abs(dx)+Math.abs(dy);
-    const k=camZoom/innerHeight*1.7;
+    const k=camZoom/appH()*1.7;
     camTarget.x-=(dx+dy)*k*0.7; camTarget.z-=(dy-dx)*k*0.7;
     camTarget.x=clamp(camTarget.x,-66,42); camTarget.z=clamp(camTarget.z,-38,82);   // arsa 2 artık z=80'e kadar
     drag.x=e.clientX; drag.y=e.clientY; applyCam();
@@ -41436,6 +41746,7 @@ function bindInput(){
   el.addEventListener('pointerleave',endPointer);
 
   el.addEventListener('wheel',e=>{
+    if(window.PampitHome && PampitHome.isOpen()) return;   // ev kendi yakınlaştırmasını yapıyor
     setZoom((camZoomTarget!=null?camZoomTarget:camZoom)*(1+Math.sign(e.deltaY)*0.1));
   },{passive:true});
   /* Tarayıcının kendi sayfa yakınlaştırmasını engelle — yoksa iki parmak
@@ -41449,7 +41760,7 @@ function pick(cx,cy){
   // Rehberde sahaya dokunmak iş görmez (kamera sürükleme serbest kalsın diye
   // canvas'ın pointer-events'i kapatılmıyor; onun yerine seçim burada durur).
   if(guideOn()) return;
-  pv.x=(cx/innerWidth)*2-1; pv.y=-(cy/innerHeight)*2+1;
+  pv.x=(cx/innerWidth)*2-1; pv.y=-(cy/appH())*2+1;
   ray.setFromCamera(pv,camera);
   const waiting=G.cars.filter(c=>c.state==='WAIT'&&(c.special||!(c.pump<ST(G.S).staff.pompaci)));
   const shoppers=waitingShoppers();
@@ -41458,7 +41769,7 @@ function pick(cx,cy){
     // binanın gövdesi (y=3) ya da üstündeki "! n" sayısı (y=7.4) — ikisi de kasayı açar
     for(const yy of [3,7.4]){
       const mp=new THREE.Vector3(MKT.x,yy,MKT.z).project(camera);
-      const sx=(mp.x*0.5+0.5)*innerWidth, sy=(-mp.y*0.5+0.5)*innerHeight;
+      const sx=(mp.x*0.5+0.5)*innerWidth, sy=(-mp.y*0.5+0.5)*appH();
       if(Math.hypot(cx-sx,cy-sy)<(yy>5?70:86)){ openShopServe(shoppers[0]); return; }
     }
   }
@@ -41468,12 +41779,12 @@ function pick(cx,cy){
   for(const c of shoppers){ if(ray.intersectObject(c.mesh,true).length){ tapShop(c); return; } }
   for(const c of waiting) for(const yy of [1,2.8]){     // araç gövdesi ya da üstündeki DOKUN hizası
     const v=c.mesh.position.clone(); v.y=yy; v.project(camera);
-    const sx=(v.x*0.5+0.5)*innerWidth, sy=(-v.y*0.5+0.5)*innerHeight;
+    const sx=(v.x*0.5+0.5)*innerWidth, sy=(-v.y*0.5+0.5)*appH();
     if(Math.hypot(sx-cx,sy-cy)<78){ tap(c); return; }
   }
   for(const c of shoppers){
     const v=c.mesh.position.clone(); v.y=1; v.project(camera);
-    const sx=(v.x*0.5+0.5)*innerWidth, sy=(-v.y*0.5+0.5)*innerHeight;
+    const sx=(v.x*0.5+0.5)*innerWidth, sy=(-v.y*0.5+0.5)*appH();
     if(Math.hypot(sx-cx,sy-cy)<78){ tapShop(c); return; }
   }
 }
@@ -44778,6 +45089,7 @@ function renderSheetInner(){
       if(k==='importsave'){ importSave(); return; }
       if(k==='sound'){
         if(window.PampitAudio){ PampitAudio.setEnabled(!PampitAudio.enabled);
+          G.soundOn=PampitAudio.enabled; save();          // 0.5.4: ayar kayda da yazılıyor
           if(PampitAudio.enabled) PampitAudio.confirm(); }
         renderSheet(); return; }
       if(k==='lang'){ setLang((LANG+1)%4); save(); renderSheet(); hud(); return; }
@@ -45545,7 +45857,7 @@ function saveReplacer(k,v){
 function serialize(){
   const S=G.S, o={...S}; delete o.rand;
   return JSON.stringify({
-    musVol:G.musVol, sfxVol:G.sfxVol, s:o, hour:G.hour, ts:Date.now(), v:CFG.version,
+    musVol:G.musVol, sfxVol:G.sfxVol, soundOn:G.soundOn, s:o, hour:G.hour, ts:Date.now(), v:CFG.version,
     opt:{hap:G.haptics,not:G.notifyOn,speed:G.speed,lang:LANG} }, saveReplacer);
 }
 async function save(){
@@ -45581,6 +45893,7 @@ async function load(){
     /* Ses düzeyleri: kayıtta yoksa varsayılan kalıyor. */
     if(typeof d.musVol==='number') G.musVol=d.musVol;
     if(typeof d.sfxVol==='number') G.sfxVol=d.sfxVol;
+    if(typeof d.soundOn==='boolean') G.soundOn=d.soundOn;   // 0.5.4: "bütün sesler" ayarı
     return { S, hour:d.hour, ts:d.ts };
   }catch(e){
     /* Okunamayan kayıt yeni oyunla SESSİZCE eziliyordu: önce yedekle. */
@@ -46141,7 +46454,7 @@ async function settingsClick(e, where, rerender){
     if(body) body.scrollTop=0;
     return;
   }
-  if(k==='sound' && A){ A.setEnabled(!A.enabled); if(A.enabled) A.confirm(); }
+  if(k==='sound' && A){ A.setEnabled(!A.enabled); G.soundOn=A.enabled; save(); if(A.enabled) A.confirm(); }   // 0.5.4: kalıcı
   if(k==='lang'){ setLang(+b.dataset.i); save(); refreshMenu(); if(where==='game') hud(); }
   if(k==='spd'){ G.speed=+b.dataset.v; if(window.PampitAudio && PampitAudio.setSpeed) PampitAudio.setSpeed(G.speed); hud(); save(); }
   if(k==='hap'){ G.haptics=!G.haptics; buzz(20); save(); }
@@ -46368,6 +46681,10 @@ async function boot(){
   if(window.PampitAudio){
     if(typeof G.musVol==='number') PampitAudio.musicVolume=G.musVol;
     if(typeof G.sfxVol==='number') PampitAudio.setVolume(G.sfxVol);
+    /* 0.5.4: ses kapalı kaydedildiyse müzik hazırlanmadan ÖNCE kapat —
+       açılışta bir an bile çalmasın. (pampit-audio.js de localStorage'dan
+       okuyor; kayıt dosyası içe aktarılırsa bu satır onu da kapsıyor.) */
+    if(typeof G.soundOn==='boolean' && G.soundOn!==PampitAudio.enabled) PampitAudio.setEnabled(G.soundOn);
     PampitAudio.musicInit(window.PAMPIT_MUSIC);
   }
   if(window.PampitHome) PampitHome.sync();   // ev düğmesi görünürlüğü
